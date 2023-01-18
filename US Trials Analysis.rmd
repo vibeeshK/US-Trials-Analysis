@@ -1,0 +1,256 @@
+---
+author: Vibeesh Kamalakannan
+date: 2022-10-28
+generator: pandoc
+title: Best Trials
+viewport: width=device-width, initial-scale=1
+---
+
+``` {r options(warn = -1)}
+library(tidyverse)
+library(dplyr)
+library("tm")
+library("SnowballC")
+library("wordcloud")
+library("RColorBrewer")
+library(ggplot2)
+library(hrbrthemes)
+```
+
+``` {r}
+data = read.csv('national_park_trails.csv')
+```
+
+**In this project, we are tasked to work like an analyst to find out
+which features or activities are a part of the best trails in the USA. I
+decided that the popularity and average rating were the main factors
+that determined how good the trails are. I made a ranked list of most
+frequently occurring features and activities occurring only in the top 90
+percentile of popularity and average rating. But before that, I did some
+analysis to check if there were other variables that had an effect on
+the popularity.**
+
+``` {r}
+summary(data$popularity)
+```
+
+``` {r}
+summary(data$avg_rating)
+```
+
+``` {r options(warn = -1)}
+ggplot(data=data, aes(x=popularity, y=elevation_gain))+
+  geom_point() + theme_ft_rc() 
+```
+
+``` {r}
+ggplot(data=data, aes(x=popularity, y=length))+
+  geom_point() + theme_ft_rc()
+```
+**I made the above two visualizations to check if there is a correlation
+between elevation gain or length with the popularity. We cannot confirm
+that there is a correlation. But we can say that the popularity for most
+trails are between 0-40.**
+
+``` {r}
+ggplot(data=data, aes(x=factor(difficulty_rating), y= popularity )) +
+  geom_bar(stat="identity") + theme_ft_rc() + xlab('Difficulty Rating')
+```
+**From the above graph, we can see that trails with a difficulty rating
+of 3 is the most popular. and drops off as the rating increases. People
+also don't seem to like trails that are too easy (difficulty rating
+1).**
+
+``` {r}
+ggplot(data=data, aes(x=route_type, y= popularity )) +
+  geom_bar(stat="identity") + theme_ft_rc()
+```
+
+``` {r}
+ggplot(data=drop_na(data), aes(x=factor(visitor_usage), y= popularity )) +
+  geom_bar(stat="identity") + theme_ft_rc()  + xlab('Visitor Usage')
+```
+
+``` {r}
+ggplot(data=data, aes(x=popularity, y=factor(avg_rating)))+
+  geom_bar(stat="identity") + theme_ft_rc() +   ylab('Average Rating')
+```
+
+**I assumed that the more popular trails would have a higher average
+rating. This proved to be true as seen in the graph above. trails with a
+popularity score of 5000 and above have the highest ratings.**
+
+## Most popular states
+
+**Below, we see the states with the highest average popularity scores.**
+``` {r}
+data %>% 
+  group_by(state_name) %>% 
+  summarise(Mean_popularity = mean(popularity)) %>%
+  arrange(desc(Mean_popularity))
+```
+## Most popular areas
+
+**The areas with the highest average popularity scores are shown
+below.**
+``` {r}
+data %>% 
+  group_by(area_name) %>% 
+  summarise(Mean_popularity = mean(popularity)) %>%
+  arrange(desc(Mean_popularity))
+```
+## Function to find out frequency of occurences of words.
+
+**I wrote a function to find out the frequency of occurrences words in a
+list. With this function we can find out which words occur the most
+frequently in the activities and features column. This function first
+performs data cleaning before extracting the frequency of words.**
+
+``` {r}
+frequency = function (cols){
+      a = gsub("\\[|\\]", "", cols)
+      
+      a = gsub("'", "", a)
+      
+      b = c()
+      
+      for (i in a){
+        b=c(b, as.list(el(strsplit(i, ","))))
+      }
+      
+      
+      y = paste(b, collapse = " ")
+      
+      freq = sort(table(unlist(strsplit(y, " ") ) ),     
+                     decreasing = TRUE)
+      df = as.data.frame(freq)[-1,]
+      
+      colnames(df)[1] <- 'Word'
+      
+      return (df)
+}
+```
+## Function to create a word cloud.
+
+**The function below is used to create a word cloud for the most
+frequently occuring words. This is done using the libraries "tm",
+"SnowballC". "wordcloud" and "RColorBrewer".**
+
+``` {r}
+word_cloud = function(col) {
+a = gsub("\\[|\\]", "", col)
+
+a = gsub("'", "", a)
+
+b = c()
+
+for (i in a){
+  b=c(b, as.list(el(strsplit(i, ","))))
+}
+
+
+y = paste(b, collapse = " ")
+
+Corpus(VectorSource(y))   
+
+docs <- Corpus(VectorSource(y))
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+docs <- tm_map(docs, toSpace, "/")
+docs <- tm_map(docs, toSpace, "@")
+docs <- tm_map(docs, toSpace, "\\|")
+# Convert the text to lower case
+docs <- tm_map(docs, content_transformer(tolower))
+# Remove numbers
+docs <- tm_map(docs, removeNumbers)
+# Remove english common stopwords
+docs <- tm_map(docs, removeWords, stopwords("english"))
+# Remove your own stop word
+# Remove punctuations
+docs <- tm_map(docs, removePunctuation)
+# Eliminate extra white spaces
+docs <- tm_map(docs, stripWhitespace)
+# Text stemming
+# docs <- tm_map(docs, stemDocument)
+dtm <- TermDocumentMatrix(docs)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+
+return (wordcloud(words = d$word, freq = d$freq, min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2")) )
+}
+```
+## Word cloud for features for all trails.
+
+``` {r}
+word_cloud(data$features)
+```
+## Word cloud for activities for all trails.
+
+::: {#cb27 .sourceCode}
+``` {r}
+word_cloud(data$activities)
+```
+## Frequency of features in all trails
+
+``` {r}
+frequency(data$features)
+```
+
+## Frequency of activities in all trails.
+
+``` {r}
+frequency(data$activities)
+```
+
+## Filtering for top 90 percentile of popularity score and average rating.
+``` {r}
+a = quantile(data$popularity, probs = 0.9)
+b = quantile(data$avg_rating, probs = 0.9)   
+top_data = data %>%
+  filter(avg_rating >=b & popularity>=a)
+summary(top_data)
+```
+
+## Frequency of activities for the best trails in the USA.
+
+**Below, we can see the most commonly occuring activities for the best
+trails in the US. I performed this with the frequency function created
+earlier.**
+
+``` {r}
+frequency(top_data$activities)
+```
+## Frequency of features for the best trails in the USA.
+
+**The features that are a part of of the best trails in the US are shown
+below.**
+
+``` {r}
+frequency(top_data$features)
+```
+## Wordcloud for most common activities
+
+**The frequency of activities of the best trails are displayed as a word
+cloud below.**
+
+``` {r}
+word_cloud(top_data$activities)
+```
+## Wordcloud for most common features
+
+**The frequency of features of the best trails are displayed as a word
+cloud below.**
+
+``` {r}
+word_cloud(top_data$features)
+```
+
+**As mentioned before, I decided that the best trails are the ones above
+the 95th percentile of popularity score and average rating. We get 89
+such trails. In these trails, from the word cloud and the frequency
+tables we notice that views, dogs-no, wildlife and wildflowers are the
+most frequently occurring features. And when we consider activities,
+hiking, nature-trips and birding are the most frequently occurring
+activities for the best trails in the USA.**
